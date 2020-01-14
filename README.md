@@ -305,7 +305,7 @@ ros2 run file_talker file_talker my_text_file.txt
 
 ## License
 
-This library is licensed under the Apache 2.0 License.
+This library uses the Apache 2.0 License.
 
 ## Build status
 

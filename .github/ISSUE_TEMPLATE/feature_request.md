@@ -17,8 +17,8 @@ assignees: ''
 
 ## Completion Criteria
 
-** What needs to be true before we can call this "Done"? Bullet lists are appropriate. **
+** What needs to be true before this is "Done?" Bullet lists are appropriate. **
 
 ## Implementation Notes / Suggestions
 
-** If you have ideas about how this feature might be accomplished, put them here. Note that this is not a command, but a suggestion to the implementer, so feel free to speculate. **
+** If you have ideas about how the implementer might implement this feature, put them here. Note that this is not binding, just a suggestion to the implementer, so feel free to speculate. **
