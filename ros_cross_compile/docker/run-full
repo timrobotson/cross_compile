@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -euxo pipefail
+
+OS=ubuntu
+OSDISTRO=bionic
+ROSVERSION=ros2
+ROSDISTRO=eloquent
+
+HOST_ARCH=x86_64
+HOST_EMU=x86_64
+TARGET_ARCH=arm64v8
+TARGET_EMU=aarch64
+
+OS_TRIPLE=${OS}-${OSDISTRO}-${ROSVERSION}
+HOST_TAG=${HOST_ARCH}-${OS_TRIPLE}
+TARGET_TAG=${TARGET_ARCH}-${OS_TRIPLE}
+
+HOST_BASE=rostooling/cc-base:${HOST_TAG}
+HOST_ROSDEP=rostooling/cc-rosdep:${HOST_TAG}
+TARGET_BASE=rostooling/cc-base:${TARGET_TAG}
+
+build-host-base() {
+  docker build . -f base.Dockerfile \
+    --build-arg OS_BASE=${OS}:${OSDISTRO} \
+    --build-arg EMU_ARCH=${HOST_EMU} \
+    --build-arg ROS_VERSION=${ROSVERSION} \
+    -t ${HOST_BASE}
+}
+
+build-host-rosdep() {
+  docker build . -f rosdep.Dockerfile \
+    --build-arg OS_BASE=${HOST_BASE} \
+    -t ${HOST_ROSDEP}
+}
+
+build-target-base() {
+  docker build . -f base.Dockerfile \
+    --build-arg OS_BASE=${TARGET_ARCH}/${OS}:${OSDISTRO} \
+    --build-arg EMU_ARCH=${TARGET_EMU} \
+    --build-arg ROS_VERSION=${ROSVERSION} \
+    -t ${TARGET_BASE}
+}
+
+mkdir -p bin/
+cp /usr/bin/qemu-${TARGET_EMU}-static bin/
+cp /usr/bin/qemu-${HOST_EMU}-static bin/
+
+docker pull ${HOST_BASE} || build-host-base
+docker pull ${HOST_ROSDEP} || build-host-rosdep
+
+# Gather rosdeps
+docker run \
+  -v ${WORKSPACE}:/root/ws \
+  -e PACKAGE=${PACKAGE} \
+  -e ROSDISTRO=${ROSDISTRO} \
+  ${HOST_ROSDEP}
+
+docker pull ${TARGET_BASE} || build-target-base
+
+cp -r $WORKSPACE/cc_artifacts .
+docker build . -f emubuild.Dockerfile \
+  --build-arg BASE=${TARGET_BASE} \
+  -t "$(whoami)"-ws-up-to-${PACKAGE}:${TARGET_TAG}

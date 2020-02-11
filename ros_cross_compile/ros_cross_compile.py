@@ -19,10 +19,14 @@
 import argparse
 import logging
 import os
+from pathlib import Path
 import sys
 from typing import List
 
 from ros_cross_compile.builders import run_emulated_docker_build
+from ros_cross_compile.dependencies import build_rosdep_image
+from ros_cross_compile.dependencies import gather_rosdeps
+from ros_cross_compile.docker_client import DockerClient
 from ros_cross_compile.platform import Platform
 from ros_cross_compile.platform import SUPPORTED_ARCHITECTURES
 from ros_cross_compile.platform import SUPPORTED_ROS2_DISTROS
@@ -103,8 +107,31 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help='Provide a path to a custom arbitrary directory to copy into the sysroot container. '
              'You may use this data in your --custom-setup-script, it will be available as '
              '"./custom_data/" in the current working directory when the script is run.')
+    parser.add_argument(
+        '--skip-rosdep',
+        action='store_true',
+        help='Skip checking the workspace for rosdeps. '
+             'NOTE that this will cause the buiild to fail if this step has not been run before, '
+             'or if you have added new dependencies since the last check.')
 
     return parser.parse_args(args)
+
+
+def setup_data_dir():
+    """
+    Set up the working directory where this tool will build Docker images.
+
+    We need to copy files into this directory.
+    The user potentially installed this package into a place needing root privileges to write.
+    Therefore, we can't use the existing Dockerfiles in place,
+    so we create a directory under the user's home.
+    """
+    user_config_dir = Path.home() / '.ros_cross_compile' / 'bin'
+    user_config_dir.mkdir(parents=True, exists_ok=True)
+
+    if sys.platform == 'linux':
+        # copy qemu bins
+        pass
 
 
 def main():
@@ -112,15 +139,23 @@ def main():
     # Configuration
     args = parse_args(sys.argv[1:])
     platform = Platform(args.arch, args.os, args.rosdistro, args.sysroot_base_image)
+    docker_client = DockerClient(args.sysroot_nocache)
+    sysroot = Path(args.sysroot_path).resolve()
+    ros_workspace = sysroot / args.ros_workspace
+    docker_dir = Path(__file__).parent / 'docker'
+
+    # cross-compile pipeline
+    if not args.skip_rosdep:
+        rosdep_image = build_rosdep_image(docker_client, platform, docker_dir)
+        gather_rosdeps(docker_client, rosdep_image, ros_workspace, platform.ros_distro)
+
     sysroot_creator = SysrootCreator(cc_root_dir=args.sysroot_path,
                                      ros_workspace_dir=args.ros_workspace,
                                      platform=platform,
-                                     docker_no_cache=args.sysroot_nocache,
                                      custom_setup_script_path=args.custom_setup_script,
                                      custom_data_dir=args.custom_data_dir)
-    sysroot_creator.create_workspace_sysroot_image()
-    ros_workspace_dir = os.path.join(args.sysroot_path, 'sysroot', args.ros_workspace)
-    run_emulated_docker_build(platform.sysroot_image_tag, ros_workspace_dir)
+    sysroot_creator.create_workspace_sysroot_image(docker_client)
+    run_emulated_docker_build(docker_client, platform.sysroot_image_tag, ros_workspace)
 
 
 if __name__ == '__main__':
